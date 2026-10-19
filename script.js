@@ -13,6 +13,12 @@ let score = 0;
 let gameOver = false;
 let winFlag = false;
 
+// Jefe final: aparece cuando todos los enemigos normales son derrotados.
+let boss = null;
+let bossBullets = [];
+let bossSpawned = false;
+const BOSS_MAX_HP = 20;
+
 let leftPressed = false;
 let rightPressed = false;
 let moveX = 0;
@@ -59,6 +65,9 @@ function resetGame() {
     score = 0;
     gameOver = false;
     winFlag = false;
+    boss = null;
+    bossBullets = [];
+    bossSpawned = false;
     leftPressed = false;
     rightPressed = false;
     moveX = 0;
@@ -77,6 +86,72 @@ function shootBullet() {
         h: 14,
         speed: 5
     });
+}
+
+// ---- JEFE FINAL ----
+function spawnBoss() {
+    bossSpawned = true;
+    bossBullets = [];
+    boss = {
+        x: 115, y: 48, w: 170, h: 62,
+        hp: BOSS_MAX_HP,
+        direction: 1,
+        speed: 1.8,
+        shootCooldown: 55,
+        hitFlash: 0
+    };
+}
+
+function updateBoss() {
+    if (!boss) return;
+
+    // El jefe se mueve de lado a lado.
+    boss.x += boss.direction * boss.speed;
+    if (boss.x <= 8 || boss.x + boss.w >= CW - 8) {
+        boss.direction *= -1;
+    }
+
+    // El jefe dispara hacia el jugador.
+    boss.shootCooldown--;
+    if (boss.shootCooldown <= 0) {
+        bossBullets.push({
+            x: boss.x + boss.w / 2 - 4,
+            y: boss.y + boss.h,
+            w: 8, h: 12, speed: 3.2
+        });
+        boss.shootCooldown = 58;
+    }
+
+    // Mover proyectiles del jefe y comprobar si alcanzan al jugador.
+    for (let i = bossBullets.length - 1; i >= 0; i--) {
+        const b = bossBullets[i];
+        b.y += b.speed;
+        if (rectCollide(player, b)) {
+            gameOver = true;
+            return;
+        }
+        if (b.y > CH) bossBullets.splice(i, 1);
+    }
+
+    // Los disparos del jugador dañan al jefe.
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        if (rectCollide(b, boss)) {
+            bullets.splice(i, 1);
+            boss.hp--;
+            boss.hitFlash = 5;
+            score += 10;
+            updateScore();
+            if (boss.hp <= 0) {
+                boss = null;
+                bossBullets = [];
+                winFlag = true;
+                return;
+            }
+        }
+    }
+
+    if (boss && boss.hitFlash > 0) boss.hitFlash--;
 }
 
 // ---- ACTUALIZAR PUNTUACIÓN ----
@@ -123,8 +198,13 @@ function update() {
     for (const e of enemies) {
         if (e.alive) { anyAlive = true; break; }
     }
-    if (!anyAlive) {
-        winFlag = true;
+    if (!anyAlive && !bossSpawned) {
+        spawnBoss();
+    }
+
+    // Si el jefe está activo, actualizamos su comportamiento y sus colisiones.
+    if (boss) {
+        updateBoss();
         return;
     }
 
@@ -246,6 +326,51 @@ function draw() {
     }
     ctx.shadowBlur = 0;
 
+    // Jefe final y barra de vida.
+    if (boss) {
+        ctx.save();
+        ctx.shadowColor = boss.hitFlash > 0 ? '#ffffff' : '#ff2f8e';
+        ctx.shadowBlur = boss.hitFlash > 0 ? 24 : 18;
+        ctx.fillStyle = boss.hitFlash > 0 ? '#ffffff' : '#a72cff';
+        ctx.beginPath();
+        ctx.roundRect(boss.x, boss.y, boss.w, boss.h, 14);
+        ctx.fill();
+
+        // Ojos y detalles del jefe.
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ffe9ff';
+        ctx.fillRect(boss.x + 28, boss.y + 18, 28, 18);
+        ctx.fillRect(boss.x + boss.w - 56, boss.y + 18, 28, 18);
+        ctx.fillStyle = '#1b1028';
+        ctx.fillRect(boss.x + 37, boss.y + 23, 10, 10);
+        ctx.fillRect(boss.x + boss.w - 47, boss.y + 23, 10, 10);
+        ctx.fillStyle = '#ff5a8a';
+        ctx.fillRect(boss.x + boss.w / 2 - 15, boss.y + 43, 30, 7);
+        ctx.restore();
+
+        // Barra de vida.
+        ctx.fillStyle = '#301b35';
+        ctx.fillRect(75, 16, 250, 12);
+        ctx.fillStyle = '#ff477e';
+        ctx.fillRect(75, 16, 250 * Math.max(0, boss.hp) / BOSS_MAX_HP, 12);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(75, 16, 250, 12);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 13px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('JEFE FINAL', CW / 2, 40);
+
+        ctx.fillStyle = '#ff6868';
+        ctx.shadowColor = '#ff2f5e';
+        ctx.shadowBlur = 12;
+        for (const b of bossBullets) {
+            ctx.fillRect(b.x, b.y, b.w, b.h);
+        }
+        ctx.shadowBlur = 0;
+    }
+
     // Mensajes
     ctx.font = 'bold 24px "Courier New", monospace';
     ctx.textAlign = 'center';
@@ -260,7 +385,7 @@ function draw() {
         ctx.fillStyle = '#f5e56b';
         ctx.shadowColor = '#ffd966';
         ctx.shadowBlur = 30;
-        ctx.fillText('✨ ¡VICTORIA! ✨', CW/2, CH/2 - 20);
+        ctx.fillText('🏆 ¡JEFE DERROTADO!', CW/2, CH/2 - 20);
         ctx.shadowBlur = 0;
     }
 
